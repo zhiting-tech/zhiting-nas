@@ -1,0 +1,3 @@
+addr: ":8089"
+root: ./data_test
+cache: ./cache_test

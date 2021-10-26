@@ -1,0 +1,17 @@
+Server:
+    RunMode: debug
+    HttpPort: 8089
+    ReadTimeout: 60
+    WriteTimeout: 60
+App:
+    DefaultPageSize: 10
+    MaxPageSize: 100
+    LogSavePath: /mnt/data/zt-smartassistant/volume/logs
+    LogFileName: app
+    LogFileExt: .log
+    UploadSavePath: /mnt/data/zt-smartassistant/volume
+    DbSavePath: /app/data/wanggpan.db
+ExtServer:
+    LvmServer: 192.168.0.123:9090
+    SaServer: 192.168.0.123:9020
+    SaHttp: http
