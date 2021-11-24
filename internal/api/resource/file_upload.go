@@ -256,7 +256,8 @@ func (req *UploadFileReq) getNewName(path string) string {
 func (req *UploadFileReq) checkFileHash(newPath string) (err error) {
 	// 校验hash
 	hash := utils.SHA256File(newPath)
-	if req.Hash != hash {
+	field := strings.Split(req.Hash, "-")
+	if field[0] != hash {
 		err = errors.New(status.ParamFileHashError)
 		// 合并文件hash不匹配删除文件
 		filebrowser.GetFB().RemoveAll(newPath)

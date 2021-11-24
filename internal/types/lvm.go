@@ -1,5 +1,5 @@
 package types
 
 const (
-	LvmSystemDefaultName = "__system__"
+	LvmSystemDefaultName = "_default_"
 )

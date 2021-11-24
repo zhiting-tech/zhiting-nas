@@ -252,6 +252,7 @@ func createPrivateFolder(user *session.User, folderPath string) (err error) {
 	if err != nil {
 		return
 	}
+
 	name := user.Nickname + "-文件"
 	// 如果数量大于0 则表示存在 则需要在文件夹名称加上数量
 	if count > 0 {

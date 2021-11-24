@@ -62,19 +62,24 @@ func UpdateFolder(c *gin.Context) {
 	if err != nil {
 		return
 	}
-	// 权限数组
-	var auths = make([]entity.FolderAuth, len(req.Auth))
-	var persons = make([]string, len(req.Auth))
-	for key, auth := range req.Auth {
-		auths[key] = entity.FolderAuth{
-			Uid:      auth.Uid,
-			Nickname: auth.Nickname,
-			Face:     auth.Face,
-			Read:     auth.Read,
-			Write:    auth.Write,
-			Deleted:  auth.Deleted,
+	// 权限数组,检查权限数组是否有重复用户（uid为判断标准）,并过滤掉重复的id
+	var auths = make([]entity.FolderAuth, 0, len(req.Auth))
+	var persons = make([]string, 0, len(req.Auth))
+	var noRepeatUid = make(map[int]int)
+
+	for _, auth := range req.Auth {
+		if _, ok := noRepeatUid[auth.Uid]; !ok {
+			noRepeatUid[auth.Uid] = auth.Uid
+			auths = append(auths, entity.FolderAuth{
+				Uid:      auth.Uid,
+				Nickname: auth.Nickname,
+				Face:     auth.Face,
+				Read:     auth.Read,
+				Write:    auth.Write,
+				Deleted:  auth.Deleted,
+			})
+			persons = append(persons, auth.Nickname)
 		}
-		persons[key] = auth.Nickname
 	}
 
 	// 更新文件夹
@@ -97,17 +102,17 @@ func UpdateFolder(c *gin.Context) {
 			isShare = 1
 		}
 		// 权限再添加
-		for key := range req.Auth {
+		for key := range auths {
 			auths[key].FolderId = req.ID
 			auths[key].IsShare = isShare
 		}
 		if err = entity.BatchInsertAuth(tx, auths); err != nil {
-			err = errors.Wrap(err, status.FolderAddFailErr)
+			err = errors.Wrap(err, status.FolderUpdateFailErr)
 			return err
 		}
 		// 处理文件夹下的目录问题
 		if err = req.updateOldPath(tx, oldInfo); err != nil {
-			err = errors.Wrap(err, status.FolderAddFailErr)
+			err = errors.Wrap(err, status.FolderUpdateFailErr)
 			return err
 		}
 
@@ -191,16 +196,21 @@ func (req *UpdateReq) validateRequest() (oldInfo *entity.FolderInfo, err error) 
 func (req *UpdateReq) updateOldPath(tx *gorm.DB, oldInfo *entity.FolderInfo) error {
 	// 如果名称没有修改
 	if oldInfo.Name != req.Name {
-		// 修改目录信息
-		oldPath := fmt.Sprintf("/%s/%s/%s", oldInfo.PoolName, oldInfo.PartitionName, oldInfo.Name)
-		newPath := fmt.Sprintf("/%s/%s/%s", oldInfo.PoolName, oldInfo.PartitionName, req.Name)
-		if err := utils.UpdateFolderPath(tx, oldPath, newPath); err != nil {
-			return err
-		}
-		// 修改文件夹名称，直接调整
-		if err := filebrowser.GetFB().Rename(oldPath, newPath); err != nil {
-			config.Logger.Errorf("update folder name fail %v", err)
-			return err
+		// 名称跟绝对路径名称相等才需要调整路径
+		if oldInfo.Name == path.Base(oldInfo.AbsPath) {
+			// 修改目录信息
+			oldPath := fmt.Sprintf("/%s/%s/%s", oldInfo.PoolName, oldInfo.PartitionName, oldInfo.Name)
+			newPath := fmt.Sprintf("/%s/%s/%s", oldInfo.PoolName, oldInfo.PartitionName, req.Name)
+			if err := utils.UpdateFolderPath(tx, oldPath, newPath); err != nil {
+				return err
+			}
+			// 修改文件夹名称，直接调整
+			if err := filebrowser.GetFB().Rename(oldPath, newPath); err != nil {
+				config.Logger.Errorf("update folder name fail %v", err)
+				return err
+			}
+		} else {
+			_ = entity.UpdateFolderInfo(tx, oldInfo.ID, map[string]interface{}{"name": req.Name})
 		}
 	}
 	// 修改了分区名称，需要异步执行

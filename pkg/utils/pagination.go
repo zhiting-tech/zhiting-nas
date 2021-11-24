@@ -14,17 +14,17 @@ type Pager struct {
 
 func GetPage(c *gin.Context) int {
 	page := StrTo(c.Query("page")).MustInt()
-	//if page <= 0 {
-	//	return 1
-	//}
+	// if page <= 0 {
+	// 	return 1
+	// }
 	return page
 }
 
 func GetPageSize(c *gin.Context) int {
 	pageSize := StrTo(c.Query("page_size")).MustInt()
-	//if pageSize <= 0 {
-	//	return global.AppSetting.DefaultPageSize
-	//}
+	// if pageSize <= 0 {
+	// 	return global.AppSetting.DefaultPageSize
+	// }
 	if pageSize > config.AppSetting.MaxPageSize {
 		return config.AppSetting.MaxPageSize
 	}
