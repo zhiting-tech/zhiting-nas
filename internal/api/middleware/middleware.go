@@ -8,52 +8,79 @@ import (
 	"gitlab.yctc.tech/zhiting/wangpan.git/internal/types"
 	"gitlab.yctc.tech/zhiting/wangpan.git/internal/types/status"
 	"gitlab.yctc.tech/zhiting/wangpan.git/pkg/errors"
+	"gitlab.yctc.tech/zhiting/wangpan.git/pkg/proto"
 	"gitlab.yctc.tech/zhiting/wangpan.git/pkg/response"
 	"gitlab.yctc.tech/zhiting/wangpan.git/pkg/session"
 	"path/filepath"
-	"strconv"
 )
+
+type userInfo struct {
+	ScopeToken string `json:"scope_token"`
+}
+
+func getHeader(c *gin.Context) (userInfo, error) {
+	// 获取用户ID
+	var uInfo userInfo
+	uInfo.ScopeToken = c.GetHeader(types.ScopeTokenKey)
+	if uInfo.ScopeToken == "" {
+		return uInfo, fmt.Errorf("getHeader scopeToken is nil")
+	}
+	return uInfo, nil
+}
+
+func getQuery(c *gin.Context) (userInfo, error) {
+	// 获取用户ID
+	var (
+		uInfo   userInfo
+		isExist bool
+	)
+
+	uInfo.ScopeToken, isExist = c.GetQuery(types.ScopeTokenKey)
+	if isExist == false {
+		return uInfo, fmt.Errorf("getQuery scopeToken is nil")
+	}
+	return uInfo, nil
+}
 
 // RequireAccount Userid+token真假验证
 func RequireAccount(c *gin.Context) {
 	// 获取用户ID
-	strId := c.GetHeader(types.ScopeUserIdKey)
-	if strId == "" {
-		response.HandleResponse(c, errors.New(status.AuthorizationInvalid), nil)
-		c.Abort()
-		return
-	}
-	uid, err := strconv.Atoi(strId)
-	if err != nil || uid <= 0 {
-		response.HandleResponse(c, errors.New(status.AuthorizationInvalid), nil)
-		c.Abort()
-		return
+	info, err := getHeader(c)
+	if err != nil {
+		info, err = getQuery(c)
+		if err != nil {
+			response.HandleResponse(c, errors.New(status.AuthorizationInvalid), nil)
+			c.Abort()
+			return
+		}
 	}
 
-	// 通过过来的token，验证token是否正确
-	// TODO 使用http的方式，可能会变得缓慢，后面改为其他方式验证
-	apiUrl := fmt.Sprint( "/api/users/", uid)
-	userInfo, err := utils.GetRequestSaServer(apiUrl, c)
-	if err != nil {
-		config.Logger.Errorf("GetRequestSaServer err %v", err)
-		response.HandleResponse(c, errors.New(status.AuthorizationInvalid), nil)
-		c.Abort()
-		return
-	}
-	// 判断响应的状态码 为0则http请求成功
-	if userInfo.Status != 0 {
-		config.Logger.Errorf("GetRequestSaServer err status 0 %v", userInfo)
+	userInfo, err := proto.GetUserInfo(info.ScopeToken)
+	config.Logger.Info(fmt.Sprintf("%s_%s", "GetUserInfo", userInfo))
+	if err != nil || userInfo.AreaInfo.AreaType == 0 {
 		response.HandleResponse(c, errors.New(status.AuthorizationInvalid), nil)
 		c.Abort()
 		return
 	}
 
 	user := &session.User{
-		UserID: userInfo.UserId,
-		Nickname: userInfo.Nickname,
-		IsOwner: userInfo.IsOwner,
-		ScopeToken: c.GetHeader(types.ScopeTokenKey),
-		AreaName: userInfo.SaArea.Name,
+		UserID:     int(userInfo.UserInfo.UserId),
+		Nickname:   userInfo.UserInfo.NickName,
+		IsOwner:    userInfo.UserInfo.IsOwner,
+		ScopeToken: info.ScopeToken,
+		AreaName:   userInfo.AreaInfo.Name,
+		AreaType:   int(userInfo.AreaInfo.AreaType),
+	}
+
+	if userInfo.AreaInfo.AreaType == types.AreaCompanyType {
+		for _, v := range userInfo.DepartmentInfos {
+			tmpInfo := session.DepartmentBaseInfo{
+				DepartmentId: v.DepartmentId,
+				Name:         v.Name,
+				Role:         int(v.CompanyRole),
+			}
+			user.DepartmentBaseInfos = append(user.DepartmentBaseInfos, tmpInfo)
+		}
 
 	}
 	c.Set("session_user", user)

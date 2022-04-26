@@ -12,8 +12,8 @@ import (
 // PartitionInfo 存储池分区详情
 type PartitionInfo struct {
 	PoolName   string
-	Name 	   string
-	Size 	   int64
+	Name       string
+	Size       int64
 	FreeSize   int64
 	VgFreeSize int64
 }
@@ -39,10 +39,10 @@ func GetPartitionInfo(poolName, partitionName string) (*PartitionInfo, error) {
 		for _, lv := range vg.LVS {
 			if lv.Name == partitionName {
 				partitionInfo := PartitionInfo{
-					PoolName: poolName,
-					Name: lv.Name,
-					Size: lv.Size,
-					FreeSize: lv.FreeSize,
+					PoolName:   poolName,
+					Name:       lv.Name,
+					Size:       lv.Size,
+					FreeSize:   lv.FreeSize,
 					VgFreeSize: vg.FreeSize,
 				}
 				return &partitionInfo, nil

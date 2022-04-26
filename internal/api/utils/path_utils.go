@@ -15,7 +15,7 @@ import (
 )
 
 // GetAbsFolderIdFromPath  根据/s/:id/xxx路径获取出文件夹folder的ID
-func GetAbsFolderIdFromPath(path string)(fileId int,err error) {
+func GetAbsFolderIdFromPath(path string) (fileId int, err error) {
 	// 获取根目录Id
 	path = filepath.Join(path)
 	rex := regexp.MustCompile(`^/s/[1-9][0-9]*`)
@@ -29,8 +29,8 @@ func GetAbsFolderIdFromPath(path string)(fileId int,err error) {
 	// 获取根目录详情
 	folderInfo, err := entity.GetFolderInfo(folderId)
 	if err != nil {
-		err = errors.Wrap(err,errors.NotFound)
-		return 
+		err = errors.Wrap(err, errors.NotFound)
+		return
 	}
 
 	// 匹配出完整的路径
@@ -39,7 +39,7 @@ func GetAbsFolderIdFromPath(path string)(fileId int,err error) {
 	// 查询出文件夹详情
 	absFolder, err := entity.GetFolderInfoByAbsPath(combinationPath)
 	if err != nil {
-		err = errors.Wrap(err,errors.NotFound)
+		err = errors.Wrap(err, errors.NotFound)
 		return
 	}
 
@@ -131,4 +131,11 @@ func GetFilePathAuth(userID int, path string) (*entity.FolderRow, error) {
 	}
 
 	return entity.GetRelateFolderInfo(folderId, userID)
+}
+
+// GetPathExt 获取文件后缀
+func GetPathExt(path string) string {
+	split := strings.Split(path, ".")
+	i := len(split)
+	return split[i-1]
 }

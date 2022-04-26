@@ -26,7 +26,7 @@ type OperateResourceReq struct {
 	Destination    string   `json:"destination"`
 	Sources        []string `json:"sources"`
 	DestinationPwd string   `json:"destination_pwd"`
-	IsEncryptMove  []int	// 是否加密路径内移动
+	IsEncryptMove  []int    // 是否加密路径内移动
 }
 
 // FolderResource 信息
@@ -116,7 +116,7 @@ func (req *OperateResourceReq) OperateResource(uid int) (err error) {
 		// 保存文件夹数据
 		// 把key也带入，以便找出是否是加密路径内的移动
 		destPath := filepath.Join(req.Destination, filepath.Base(path))
-		if err = req.saveFolder(key, uid, secret, destPath); err != nil {
+		if err = req.saveFolder(key, uid, secret, destPath, path); err != nil {
 			config.Logger.Errorf("resource_operate save folder err %v", err)
 			return
 		}
@@ -143,14 +143,14 @@ func (req *OperateResourceReq) Copy(path string, fs *filebrowser.FileBrowser) (e
 }
 
 // encryptFolder 处理加密文件夹
-func (req *OperateResourceReq) saveFolder(key, uid int, secret, source string) (err error) {
+func (req *OperateResourceReq) saveFolder(key, uid int, secret, source, srcPath string) error {
 	var files []os.FileInfo
 	var folders []*entity.FolderInfo
 
 	fs := filebrowser.GetFB()
 	isDir, err := fs.IsDir(source)
 	if err != nil {
-		return
+		return err
 	}
 
 	// 判断是否为目录
@@ -162,36 +162,48 @@ func (req *OperateResourceReq) saveFolder(key, uid int, secret, source string) (
 		files, err = srcFile.Readdir(-1)
 		if err != nil {
 			err = errors.Wrap(err, errors.InternalServerErr)
-			return
+			return err
 		}
 		// 循环目录下的所有文件
 		for _, file := range files {
 			fSource := source + "/" + file.Name()
+			path := srcPath + "/" + file.Name()
 			if file.IsDir() {
 				// 如果是目录，记录目录信息
 				folders = append(folders, &entity.FolderInfo{Name: file.Name(), Type: types.FolderTypeDir, AbsPath: fSource})
 				// 递归循环目录下的数据
-				err = req.saveFolder(key, uid, secret, fSource)
+				err = req.saveFolder(key, uid, secret, fSource, path)
 				if err != nil {
-					return
+					return err
 				}
 			} else {
 				// 如果是文件，记录文件信息
-				folders = append(folders, &entity.FolderInfo{Name: file.Name(), Type: types.FolderTypeFile, AbsPath: fSource})
-
+				info, err := entity.GetFolderInfoByAbsPath(path)
+				var hash string
+				if err == nil {
+					hash = info.Hash
+				}
+				folder := &entity.FolderInfo{Name: file.Name(), Type: types.FolderTypeFile, AbsPath: fSource, Hash: hash}
+				folders = append(folders, folder)
 				// 加密文件
 				if err = req.encryptFile(key, secret, fSource, fs); err != nil {
-					return
+					return err
 				}
 			}
 		}
 	} else {
 		// 如果是文件，记录文件信息
-		folders = append(folders, &entity.FolderInfo{Name: filepath.Base(source), Type: types.FolderTypeFile, AbsPath: source})
+		info, er := entity.GetFolderInfoByAbsPath(srcPath)
+		var hash string
+		if er == nil {
+			hash = info.Hash
+		}
+		folder := &entity.FolderInfo{Name: filepath.Base(source), Type: types.FolderTypeFile, AbsPath: source, Hash: hash}
+		folders = append(folders, folder)
 
 		// 加密文件
 		if err = req.encryptFile(key, secret, source, fs); err != nil {
-			return
+			return err
 		}
 	}
 
@@ -203,11 +215,11 @@ func (req *OperateResourceReq) saveFolder(key, uid int, secret, source string) (
 			folders[i].Uid = uid
 		}
 		if err = entity.BatchInsertFolder(entity.GetDB(), folders); err != nil {
-			return
+			return err
 		}
 	}
 
-	return
+	return nil
 }
 
 // encryptFile 加密文件
@@ -216,14 +228,18 @@ func (req *OperateResourceReq) encryptFile(key int, secret, source string, fs *f
 	if secret == "" || req.IsEncryptMove[key] == 1 {
 		return
 	}
-	if _, err = utils2.EncryptFile(secret, source, source + types.FolderEncryptExt); err != nil {
+
+	if _, err = utils2.EncryptFile(secret, source, source+types.FolderEncryptExt); err != nil {
 		return
 	}
+
 	if err = fs.Remove(source); err != nil {
 		return
 	}
-	if err = fs.Rename(source + types.FolderEncryptExt, source); err != nil {
+
+	if err = fs.Rename(source+types.FolderEncryptExt, source); err != nil {
 		return
 	}
+
 	return
 }

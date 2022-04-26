@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"gitlab.yctc.tech/zhiting/wangpan.git/internal/api/utils"
+	"gitlab.yctc.tech/zhiting/wangpan.git/internal/config"
 	"gitlab.yctc.tech/zhiting/wangpan.git/internal/entity"
 	"gitlab.yctc.tech/zhiting/wangpan.git/internal/types"
 	"gitlab.yctc.tech/zhiting/wangpan.git/internal/types/status"
@@ -12,32 +13,35 @@ import (
 	"gitlab.yctc.tech/zhiting/wangpan.git/pkg/response"
 	"gitlab.yctc.tech/zhiting/wangpan.git/pkg/session"
 	"mime/multipart"
+	"os"
 	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 const (
-	actionUpload      = "upload"
-	actionChunk       = "chunk"
-	actionMerge       = "merge"
+	actionUpload = "upload"
+	actionChunk  = "chunk"
+	actionMerge  = "merge"
 	// FILE_CHUNK_SIZE = 2 * 1024 * 1024 // 文件分块大小2M
 )
 
 type UploadFileReq struct {
-	path         string
-	Action       string
-	totalSize    string
-	chunkNumber  string
-	chunkSize    string
-	TotalChunks  string
-	Hash         string
-	uploadFile   multipart.File
-	header       *multipart.FileHeader
-	IsAutoRename string // 上传文件夹时，先创建文件夹,根据该字段判断是否要给文件夹重命名
+	path           string
+	Action         string
+	totalSize      string
+	chunkNumber    string
+	chunkSize      string
+	TotalChunks    string
+	Hash           string
+	Identification string
+	uploadFile     multipart.File
+	header         *multipart.FileHeader
+	IsAutoRename   string // 上传文件夹时，先创建文件夹,根据该字段判断是否要给文件夹重命名
 }
 
 type UploadFileResp struct {
@@ -45,9 +49,63 @@ type UploadFileResp struct {
 	Chunks   []Chunk `json:"chunks"`
 }
 
+var (
+	chunkMap     *chunkMapSt
+	chunkMapOnce sync.Once
+)
+
+type chunkMapSt struct {
+	MapChunk map[string][]Chunk
+	sync.RWMutex
+}
+
 type Chunk struct {
 	ID   int   `json:"id"`
 	Size int64 `json:"size"`
+}
+
+func GetChunkMap() *chunkMapSt {
+	chunkMapOnce.Do(func() {
+		chunkMap = &chunkMapSt{
+			MapChunk: make(map[string][]Chunk),
+		}
+	})
+	return chunkMap
+}
+
+func (c *chunkMapSt) GetChunks(hash string) []Chunk {
+	c.RWMutex.RLock()
+	defer c.RWMutex.RUnlock()
+	return c.MapChunk[hash]
+}
+
+func (c *chunkMapSt) SetChunk(hash string, chunk Chunk) {
+	c.RWMutex.Lock()
+	defer c.RWMutex.Unlock()
+	c.MapChunk[hash] = append(c.MapChunk[hash], chunk)
+}
+
+func (c *chunkMapSt) DelChunk(hash string) {
+	delete(c.MapChunk, hash)
+}
+
+func (c *chunkMapSt) CheckChunk(hash string, chunkId int) (bool, error) {
+	var (
+		isExist bool
+	)
+	c.RWMutex.RLock()
+	defer c.RWMutex.RUnlock()
+	chunks, ok := c.MapChunk[hash]
+	if !ok {
+		return isExist, nil
+	}
+	for _, v := range chunks {
+		if v.ID == chunkId {
+			isExist = true
+			return isExist, nil
+		}
+	}
+	return isExist, nil
 }
 
 func FileUpload(c *gin.Context) {
@@ -89,7 +147,7 @@ func (req *UploadFileReq) upload(newPath string, c *gin.Context) (resp UploadFil
 	case actionUpload:
 		resp, err = req.uploadOneFile(newPath, c)
 	case actionChunk:
-		resp, err = req.chunk(c)
+		resp, err = req.chunk(newPath)
 	case actionMerge:
 		resp, err = req.merge(newPath, c)
 	}
@@ -106,6 +164,7 @@ func (req *UploadFileReq) getReq(c *gin.Context) (err error) {
 	req.TotalChunks = c.Request.FormValue("total_chunks")
 	req.totalSize = c.Request.FormValue("total_size")
 	req.IsAutoRename = c.Request.FormValue("is_auto_rename")
+	req.Identification = c.Request.FormValue("identification")
 
 	return
 }
@@ -121,6 +180,14 @@ func (req *UploadFileReq) validateRequest(c *gin.Context) (newPath string, err e
 		err = errors.Wrap(err, status.ResourceNotWriteAuthErr)
 		return
 	}
+
+	// 校验名称字符
+	compile := regexp.MustCompile(`[:*?"<>|\\]+`)
+	if isLimit := compile.MatchString(req.path); isLimit != false {
+		err = errors.Wrap(err, status.FolderNameParamErr)
+		return
+	}
+
 	// 获取上传文件的大小
 	uploadSize, err := strconv.Atoi(req.totalSize)
 	if err != nil {
@@ -209,6 +276,17 @@ func (req *UploadFileReq) handlePath() (newPath string, err error) {
 	if err != nil {
 		return
 	}
+
+	// 不允许 '/'符号
+	var tmpPath string
+	for i := 0; i < len(strings.Split(newPath, "/"))-1; i++ {
+		tmpPath = filepath.Join(tmpPath, strings.Split(newPath, "/")[i])
+	}
+	_, err = os.Stat(filepath.Join(config.AppSetting.UploadSavePath, tmpPath))
+	if err != nil {
+		err = errors.Wrap(err, status.FolderNameParamErr)
+		return
+	}
 	// 创建目录时处理路径
 	if req.Action == "" && utils.CheckPath(absPath) {
 		newPath = fmt.Sprintf("%s/", newPath)
@@ -274,11 +352,13 @@ func (req *UploadFileReq) getCachePath(userID int) string {
 // createFolder 创建createFolder数据
 func (req *UploadFileReq) createFolder(newPath string, folderType int, uid int) error {
 	if _, err := entity.CreateFolder(entity.GetDB(), &entity.FolderInfo{
-		Name:      path.Base(newPath),              // 名称
-		Type:      folderType,                      // 目录
-		AbsPath:   strings.TrimRight(newPath, "/"), // 完整路径
-		Uid:       uid,                             // 创建人
-		CreatedAt: time.Now().Unix(),               // 创建时间
+		Name:           path.Base(newPath),              // 名称
+		Hash:           strings.Split(req.Hash, "-")[0], // 文件hash
+		Type:           folderType,                      // 目录
+		AbsPath:        strings.TrimRight(newPath, "/"), // 完整路径
+		Uid:            uid,                             // 创建人
+		CreatedAt:      time.Now().Unix(),               // 创建时间
+		Identification: req.Identification,
 	}); err != nil {
 		return err
 	}
@@ -302,6 +382,15 @@ func (req *UploadFileReq) wrapResp(newPath string, fs *filebrowser.FileBrowser) 
 		Size:    fileInfo.Size(),
 		ModTime: fileInfo.ModTime().Unix(),
 		Path:    filepath.Join(firstPathStr, filepath.Base(newPath)),
+	}
+
+	pathExt := utils.GetPathExt(fileInfo.Name())
+	pathExt = strings.ToLower(pathExt)
+	v, ok := FileTypeMap[pathExt]
+	if ok && (v == types.FolderPhoto || v == types.FolderVideo) {
+		resp.Resource.ThumbnailUrl = utils.FilePath(strings.Split(req.Hash, "-")[0]) + ".png"
+	} else {
+		resp.Resource.ThumbnailUrl = ""
 	}
 
 	if !fileInfo.IsDir() {

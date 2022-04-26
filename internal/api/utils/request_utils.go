@@ -3,7 +3,6 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/gin-gonic/gin"
 	"gitlab.yctc.tech/zhiting/wangpan.git/internal/config"
 	"gitlab.yctc.tech/zhiting/wangpan.git/internal/types"
 	"io/ioutil"
@@ -29,7 +28,7 @@ type SaArea struct {
 	Name string `json:"name"`
 }
 
-func GetRequestSaServer(api string, c *gin.Context) (*SaUserInfo, error) {
+func GetRequestSaServer(api, scopeToken string) (*SaUserInfo, error) {
 	// 通过过来的token，验证token是否正确
 	apiUrl := fmt.Sprint(config.ExtServerSetting.SaHttp, "://", config.ExtServerSetting.SaServer, api)
 	request, err := http.NewRequest("GET", apiUrl, nil)
@@ -38,7 +37,7 @@ func GetRequestSaServer(api string, c *gin.Context) (*SaUserInfo, error) {
 	}
 
 	// 设置GET请求头部参数
-	request.Header[types.ScopeTokenKey] = []string{c.GetHeader(types.ScopeTokenKey)}
+	request.Header[types.ScopeTokenKey] = []string{scopeToken}
 	resp, err := (&http.Client{}).Do(request)
 	if err != nil {
 		return nil, err

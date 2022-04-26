@@ -3,11 +3,14 @@ package main
 import (
 	"github.com/gin-gonic/gin"
 	"gitlab.yctc.tech/zhiting/wangpan.git/internal/api"
+	"gitlab.yctc.tech/zhiting/wangpan.git/internal/api/resource"
 	"gitlab.yctc.tech/zhiting/wangpan.git/internal/config"
 	"gitlab.yctc.tech/zhiting/wangpan.git/internal/entity"
 	"gitlab.yctc.tech/zhiting/wangpan.git/internal/task"
+	"gitlab.yctc.tech/zhiting/wangpan.git/internal/types"
 	"gitlab.yctc.tech/zhiting/wangpan.git/pkg/filebrowser"
 	"gitlab.yctc.tech/zhiting/wangpan.git/pkg/logger"
+	"gitlab.yctc.tech/zhiting/wangpan.git/pkg/proto"
 	"gopkg.in/natefinch/lumberjack.v2"
 	"log"
 	"math/rand"
@@ -39,12 +42,16 @@ func init() {
 	if err != nil {
 		log.Fatalf("init.setupProjectSetting err: %v", err)
 	}
+
+	if err = InitFileType(); err != nil {
+		log.Fatalf("init.InitFileType err: %v", err)
+	}
 }
 
 func main() {
 	_ = filebrowser.GetFB() // 提前报错
 	go task.GetTaskManager().Start()
-
+	go proto.SANotifyEvent()
 	gin.SetMode(config.ServerSetting.RunMode)
 	engine := gin.New()
 	api.LoadModules(engine)
@@ -83,6 +90,11 @@ func setupSetting() error {
 	if err != nil {
 		return err
 	}
+
+	config.FileTypeSetting.PhotoType = []string{"heic", "jpg", "jpeg", "png", "gif", "psd", "pdd", "psdt", "psb", "bmp", "rle", "dib", "dcm", "dc3", "dic", "eps", "iff", "tdi", "jpf", "jpx", "jp2", "j2c", "j2k", "jpc", "jps", "pcx", "pdp", "raw", "pxr", "pbm", "pgm", "ppm", "pnm", "pfm", "pam", "sct", "tga", "vda", "icb", "vst", "tif", "tiff", "mpo", "webp", "ico"}
+	config.FileTypeSetting.VideoType = []string{"mp4", "m4v", "avi", "mkv", "mov", "mpg", "mpeg", "vob", "ram", "rm", "rmvb", "asf", "wmv", "webm", "m2ts", "movie"}
+	config.FileTypeSetting.OfficeToHtmlType = []string{"docx", "doc", "pptx"}
+	config.FileTypeSetting.OfficeToPdfType = []string{"xlsx"}
 
 	config.ServerSetting.ReadTimeout *= time.Second
 	config.ServerSetting.WriteTimeout *= time.Second
@@ -123,5 +135,21 @@ func setupProjectSetting() error {
 		}
 	}
 
+	return nil
+}
+
+func InitFileType() error {
+	for _, v := range config.FileTypeSetting.PhotoType {
+		resource.FileTypeMap[v] = types.FolderPhoto
+	}
+	for _, v := range config.FileTypeSetting.VideoType {
+		resource.FileTypeMap[v] = types.FolderVideo
+	}
+	for _, v := range config.FileTypeSetting.OfficeToPdfType {
+		resource.FileTypeMap[v] = types.FolderOfficeWordPPt
+	}
+	for _, v := range config.FileTypeSetting.OfficeToHtmlType {
+		resource.FileTypeMap[v] = types.FolderOfficeExcel
+	}
 	return nil
 }

@@ -1,23 +1,26 @@
 package entity
 
 import (
+	"fmt"
 	"gorm.io/gorm"
 )
 
 // FolderInfo 共享目录相关的数据表
 type FolderInfo struct {
-	ID            int    `gorm:"primary_key"`
-	Uid           int    // 创建人
-	AbsPath       string `gorm:"index"` // 绝对路径
-	Name          string // 文件/文件夹名称
-	Mode          int    // 文件夹类型：1私人文件夹 2共享文件夹
-	Type          int    // 类型：0文件夹 1文件
-	IsEncrypt     int    // 是否加密
-	Cipher        string // 加密后的密钥
-	PoolName      string // 储存池ID
-	PartitionName string // 储存池分区ID
-	Persons       string // 可访问成员，冗余用
-	CreatedAt     int64  // 创建时间
+	ID             int    `gorm:"primary_key"`
+	Uid            int    // 创建人
+	AbsPath        string `gorm:"index"` // 绝对路径
+	Name           string // 文件/文件夹名称
+	Hash           string // 文件hash
+	Mode           int    // 文件夹类型：1私人文件夹 2共享文件夹
+	Type           int    // 类型：0文件夹 1文件
+	IsEncrypt      int    // 是否加密
+	Cipher         string // 加密后的密钥
+	PoolName       string // 储存池ID
+	PartitionName  string // 储存池分区ID
+	Persons        string // 可访问成员，冗余用
+	CreatedAt      int64  // 创建时间
+	Identification string // 备份文件唯一标识
 }
 
 func (folder FolderInfo) TableName() string {
@@ -37,6 +40,23 @@ func GetFolderList(uid, pageOffset, pageSize int) ([]*FolderInfo, error) {
 	if pageOffset >= 0 && pageSize > 0 {
 		db = db.Offset(pageOffset).Limit(pageSize)
 	}
+
+	err := db.Find(&folderList).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	return folderList, nil
+}
+
+func GetFolderListByAbsPath(absPath string) ([]*FolderInfo, error) {
+	var folderList []*FolderInfo
+	db := GetDB()
+	// 只需要带出存储池分区第一层数据
+	likeStr := "/%"
+	notLikeStr := "/%/%"
+	db = db.Where("abs_path like ? and abs_path not like ?", fmt.Sprintf("%s%s", absPath, likeStr), fmt.Sprintf("%s%s", absPath, notLikeStr))
 
 	err := db.Find(&folderList).Error
 
@@ -75,13 +95,14 @@ type FolderRow struct {
 	Read      int    // 是否可读：1/0
 	Write     int    // 是否可写：1/0
 	Deleted   int    // 是否可删：1/0
+	Hash      string
 }
 
 // GetRelateFolderList 获取文件夹列表, 使用auth跟folder做关联
 func GetRelateFolderList(whereStr string, pageOffset, pageSize int) ([]*FolderRow, error) {
 	db := GetDB()
 
-	fields := []string{"folder.id", "folder.name", "folder.type", "folder.abs_path", "folder.is_encrypt"}
+	fields := []string{"folder.id", "folder.name", "folder.type", "folder.abs_path", "folder.is_encrypt", "folder.hash"}
 	fields = append(fields, []string{"auth.from_user", "auth.read", "auth.write", "auth.deleted"}...)
 
 	if pageOffset >= 0 && pageSize > 0 {
@@ -100,7 +121,7 @@ func GetRelateFolderList(whereStr string, pageOffset, pageSize int) ([]*FolderRo
 	var folderRows []*FolderRow
 	for rows.Next() {
 		r := &FolderRow{}
-		if err := rows.Scan(&r.Id, &r.Name, &r.Type, &r.AbsPath, &r.IsEncrypt, &r.FromUser, &r.Read, &r.Write, &r.Deleted); err != nil {
+		if err := rows.Scan(&r.Id, &r.Name, &r.Type, &r.AbsPath, &r.IsEncrypt, &r.Hash, &r.FromUser, &r.Read, &r.Write, &r.Deleted); err != nil {
 			return nil, err
 		}
 		folderRows = append(folderRows, r)
@@ -154,7 +175,6 @@ func GetRelateFolderInfoByUid(folderUid, userId int) (*FolderRow, error) {
 	if err := row.Scan(&r.Id, &r.Name, &r.Type, &r.AbsPath, &r.IsEncrypt, &r.Read, &r.Write, &r.Deleted); err != nil {
 		return nil, err
 	}
-
 	return r, nil
 }
 
@@ -218,6 +238,15 @@ func GetPrivateFolders(userIDs []int) ([]*FolderInfo, error) {
 	return folderInfos, nil
 }
 
+// GetPrivateFolder 获取单个用户私人文件
+func GetPrivateFolder(userIDs int) (*FolderInfo, error) {
+	var folderInfos *FolderInfo
+	if err := GetDB().Select("abs_path").Where("mode = 1 and uid IN ?", userIDs).First(&folderInfos).Error; err != nil {
+		return nil, err
+	}
+	return folderInfos, nil
+}
+
 // CreateFolder 创建文件夹
 func CreateFolder(tx *gorm.DB, FolderInfo *FolderInfo) (*FolderInfo, error) {
 	if err := tx.Create(FolderInfo).Error; err != nil {
@@ -236,8 +265,10 @@ func DelFolder(tx *gorm.DB, absPath string) error {
 
 // DelFolderByAbsPaths 根据路径删除数据
 func DelFolderByAbsPaths(tx *gorm.DB, absPaths []string) error {
-	if err := tx.Delete(&FolderInfo{}, "abs_path in (?)", absPaths).Error; err != nil {
-		return err
+	for _, v := range absPaths {
+		if err := tx.Delete(&FolderInfo{}, "abs_path like ?", v+"%").Error; err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -257,4 +288,33 @@ func QueryFolderByUid(uid int) *FolderInfo {
 	var folderInfo FolderInfo
 	GetDB().Where("uid = ?", uid).First(&folderInfo)
 	return &folderInfo
+}
+
+// GetFolderIdentification 获取用户备份文件标识
+func GetFolderIdentification(uid int) []string {
+	var identifications []string
+	var folderInfo []FolderInfo
+	GetDB().Select("identification").Where("uid = ? and identification <> ?", uid, "").Find(&folderInfo)
+	for _, v := range folderInfo {
+		identifications = append(identifications, v.Identification)
+	}
+	return identifications
+}
+
+// DelAllFolderRecode 移除所有folder表数据
+func DelAllFolderRecode() {
+	GetDB().Exec("delete from folder")
+}
+
+// GetAbsPathByMode 获取文件夹目录
+func GetAbsPathByMode(mode int) []string {
+	var (
+		modeStr    []string
+		folderInfo []FolderInfo
+	)
+	GetDB().Select("abs_path").Where("mode = ?", mode).Find(&folderInfo)
+	for _, v := range folderInfo {
+		modeStr = append(modeStr, v.AbsPath)
+	}
+	return modeStr
 }

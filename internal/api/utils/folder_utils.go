@@ -5,6 +5,7 @@ import (
 	"gitlab.yctc.tech/zhiting/wangpan.git/internal/entity"
 	"gitlab.yctc.tech/zhiting/wangpan.git/internal/types/status"
 	"gitlab.yctc.tech/zhiting/wangpan.git/pkg/errors"
+	"gitlab.yctc.tech/zhiting/wangpan.git/pkg/filebrowser"
 	"gitlab.yctc.tech/zhiting/wangpan.git/pkg/utils"
 	"gorm.io/gorm"
 	"os"
@@ -102,4 +103,32 @@ func GetFolderSize(path string) (int64, error) {
 		return err
 	})
 	return size, err
+}
+
+// FilePath thumbnail storage address
+func FilePath(hash string) string {
+	if hash == "" {
+		return ""
+	}
+	return path.Join("file", hash[0:2], hash[2:4], hash)
+}
+
+// FileDir 根据文件hash,设置文件夹目录
+func FileDir(hash string) string {
+	return path.Join("file", hash[0:2], hash[2:4])
+}
+
+// RemoveFolderAndRecode 移除文件和文件记录
+func RemoveFolderAndRecode(fs *filebrowser.FileBrowser, absPath string) (err error) {
+	// 磁盘删除
+	if err = fs.RemoveAll(absPath); err != nil {
+		err = errors.Wrap(err, status.FolderRemoveErr)
+		return
+	}
+	// 删除私人文件
+	if err = entity.DelFolder(entity.GetDB(), absPath); err != nil {
+		err = errors.Wrap(err, status.FolderRemoveErr)
+		return err
+	}
+	return
 }

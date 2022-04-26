@@ -71,3 +71,8 @@ func GetFolderAuthByUidAndFolderId(uid, folderId int) (*FolderAuth, error) {
 	}
 	return &folderAuth, nil
 }
+
+// DelAllFolderAuthRecode 移除所有folder_auth表数据
+func DelAllFolderAuthRecode() {
+	GetDB().Exec("delete from folder_auth")
+}

@@ -129,6 +129,13 @@ func (req *AddReq) validateRequest() (err error) {
 		err = errors.Wrap(err, status.FolderParamFailErr)
 		return
 	}
+	// 校验名称字符
+	compile := regexp.MustCompile(`[/:*?"<>|\\]+`)
+	if isLimit := compile.MatchString(req.Name); isLimit != false {
+		err = errors.Wrap(err, status.FolderNameParamErr)
+		return
+	}
+
 	// 校验名称长度
 	if utf8.RuneCountInString(req.Name) > 100 {
 		err = errors.Wrap(err, status.FolderNameTooLongErr)

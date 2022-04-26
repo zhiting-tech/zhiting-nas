@@ -3,9 +3,9 @@ package status
 import "gitlab.yctc.tech/zhiting/wangpan.git/pkg/errors"
 
 const (
-	DiskParamFailErr = iota + 50000
+	LoginNotSaEntity = iota + 80000
 )
 
 func init() {
-	errors.NewCode(DiskParamFailErr, "必填参数为空")
+	errors.NewCode(LoginNotSaEntity, "无sa实体，请添加")
 }

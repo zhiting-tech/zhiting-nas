@@ -6,7 +6,7 @@ import (
 )
 
 type Setting struct {
-	Name string
+	Name  string
 	Value string
 }
 

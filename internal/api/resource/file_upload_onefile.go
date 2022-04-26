@@ -3,17 +3,21 @@ package resource
 import (
 	"github.com/gin-gonic/gin"
 	"gitlab.yctc.tech/zhiting/wangpan.git/internal/api/utils"
+	"gitlab.yctc.tech/zhiting/wangpan.git/internal/config"
 	"gitlab.yctc.tech/zhiting/wangpan.git/internal/types"
 	"gitlab.yctc.tech/zhiting/wangpan.git/pkg/errors"
 	"gitlab.yctc.tech/zhiting/wangpan.git/pkg/filebrowser"
 	"gitlab.yctc.tech/zhiting/wangpan.git/pkg/session"
 	utils2 "gitlab.yctc.tech/zhiting/wangpan.git/pkg/utils"
 	"io"
+	"log"
+	"path"
 	"path/filepath"
+	"strings"
 )
 
 // uploadOneFile 单个文件上传
-func (req *UploadFileReq) uploadOneFile(newPath string,  c *gin.Context) (resp UploadFileResp, err error) {
+func (req *UploadFileReq) uploadOneFile(newPath string, c *gin.Context) (resp UploadFileResp, err error) {
 	// 判断上传的目录存不存在
 	dir := filepath.Dir(newPath)
 	fs := filebrowser.GetFB()
@@ -50,24 +54,39 @@ func (req *UploadFileReq) uploadOneFile(newPath string,  c *gin.Context) (resp U
 		return
 	}
 
+	var flag = false
+	// 获取文件类型
+	pathExt := utils.GetPathExt(newPath)
+	// 转化为小写
+	pathExt = strings.ToLower(pathExt)
+
 	// 如果密钥不为空，需要进行加密
 	if secret != "" {
+		flag = true
 		// 校验hash
 		if err = req.checkFileHash(newPath + types.FolderEncryptExt); err != nil {
 			_ = fs.Remove(newPath + types.FolderEncryptExt)
 			return
 		}
-		_, err = utils2.EncryptFile(secret, newPath + types.FolderEncryptExt, newPath)
+		_, err = utils2.EncryptFile(secret, newPath+types.FolderEncryptExt, newPath)
 		if err != nil {
 			_ = fs.Remove(newPath + types.FolderEncryptExt)
 			return
 		}
 		// 把原文件删除
 		_ = fs.Remove(newPath + types.FolderEncryptExt)
+		newPath = newPath + types.FolderEncryptExt
 	} else {
 		// 校验hash
 		if err = req.checkFileHash(newPath); err != nil {
 			return
+		}
+	}
+
+	v, ok := FileTypeMap[pathExt]
+	if ok && (v == types.FolderPhoto || v == types.FolderVideo){
+		if err = generationThumbnail(flag, path.Join(config.AppSetting.UploadSavePath, newPath), req.Hash, v); err != nil {
+			log.Print("file_upload_onfile failed:", err)
 		}
 	}
 

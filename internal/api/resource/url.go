@@ -17,4 +17,7 @@ func RegisterResourceRouter(r gin.IRouter) {
 
 	r.GET("download/*path", middleware.RequirePathPermission(), FileDownload) // 下载文件
 	r.GET("chunks/:hash", GetChunks)
+	r.GET("backups", GetBackupsIdentification) // 获取用户备份文件标识
+	r.DELETE("cache/*path", DeleteCache)
+	// r.GET("preview/:id", FilePreview) libreoffice所用空间太大 该功能停用
 }

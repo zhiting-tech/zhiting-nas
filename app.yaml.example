@@ -13,5 +13,5 @@ App:
     DbSavePath: /app/data/wanggpan.db
 ExtServer:
     LvmServer: 192.168.0.123:9090
-    SaServer: 192.168.0.123:9020
+    SaServer: 192.168.22.248:9666
     SaHttp: http

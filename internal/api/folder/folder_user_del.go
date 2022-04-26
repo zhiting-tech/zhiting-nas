@@ -2,6 +2,7 @@ package folder
 
 import (
 	"github.com/gin-gonic/gin"
+	"gitlab.yctc.tech/zhiting/wangpan.git/internal/api/utils"
 	"gitlab.yctc.tech/zhiting/wangpan.git/internal/config"
 	"gitlab.yctc.tech/zhiting/wangpan.git/internal/entity"
 	"gitlab.yctc.tech/zhiting/wangpan.git/internal/types"
@@ -48,7 +49,7 @@ func DeleteFolderByIds(c *gin.Context) {
 	}
 	// 移除私人文件
 	for _, folderInfo := range folderInfos {
-		err = removeFolderAndRecode(fs, folderInfo.AbsPath)
+		err = utils.RemoveFolderAndRecode(fs, folderInfo.AbsPath)
 		if err != nil {
 			return
 		}
@@ -60,7 +61,7 @@ func DeleteFolderByIds(c *gin.Context) {
 		if err != nil {
 			return
 		}
-		err = removeFolderAndRecode(fs, folderRow.AbsPath)
+		err = utils.RemoveFolderAndRecode(fs, folderRow.AbsPath)
 		if err != nil {
 			return
 		}
@@ -71,19 +72,4 @@ func DeleteFolderByIds(c *gin.Context) {
 		err = errors.Wrap(err, status.FolderRemoveErr)
 		return
 	}
-}
-
-// removeFolderAndRecode 移除文件和文件记录
-func removeFolderAndRecode(fs *filebrowser.FileBrowser, absPath string) (err error) {
-	// 磁盘删除
-	if err = fs.RemoveAll(absPath); err != nil {
-		err = errors.Wrap(err, status.FolderRemoveErr)
-		return
-	}
-	// 删除私人文件
-	if err = entity.DelFolder(entity.GetDB(), absPath); err != nil {
-		err = errors.Wrap(err, status.FolderRemoveErr)
-		return err
-	}
-	return
 }

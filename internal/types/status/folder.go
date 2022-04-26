@@ -30,6 +30,7 @@ const (
 	FolderPwdNotInputErr
 	FolderOldPwdErr
 	FolderEncryptCannotShareErr
+	FolderNameParamErr
 )
 
 func init() {
@@ -46,6 +47,7 @@ func init() {
 	errors.NewCode(FolderPathFailErr, "文件夹路径错误")
 	errors.NewCode(FolderNameTooLongErr, "文件夹名称长度过长")
 	errors.NewCode(FolderNameFormatErr, "文件夹名称格式有误")
+	errors.NewCode(FolderNameParamErr, "文件夹名不能包含下列任何字符：\\/:*?\"<>|")
 	errors.NewCode(FolderNameIsExistErr, "文件夹名称已存在")
 	errors.NewCode(FolderTooMuchMemberErr, "列表成员过多")
 	errors.NewCode(FolderTooFewMemberErr, "列表成员太少")

@@ -25,10 +25,10 @@ type FileDownloadResp struct {
 
 func FileDownload(c *gin.Context) {
 	var (
-		err  error
-		req  FileDownloadReq
-		resp FileDownloadResp
-		secret string
+		err          error
+		req          FileDownloadReq
+		resp         FileDownloadResp
+		secret       string
 		downloadPath string
 	)
 

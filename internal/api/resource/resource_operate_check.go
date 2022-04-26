@@ -114,14 +114,14 @@ func (req *OperateResourceReq) CheckWorkable(userID int) (err error) {
 		}
 
 		// 父级目录不能复制/移动到子级目录
-		if strings.HasPrefix(req.Destination, source + "/") {
+		if strings.HasPrefix(req.Destination, source+"/") {
 			err = errors.New(status.ResourceTargetSubdirectoryErr)
 			return err
 		}
 
 		// 文件已存在目标文件或文件夹，不允许操作
 		// 取source目录的最后一层名称，或者是文件名称
-		src := source[strings.LastIndex(source, "/") + 1:]
+		src := source[strings.LastIndex(source, "/")+1:]
 		destSource := filepath.Join(destinationResource.realPath, src)
 		_, err = fs.Open(destSource)
 		if err == nil {
@@ -148,7 +148,7 @@ func (req *OperateResourceReq) CheckWorkable(userID int) (err error) {
 				req.IsEncryptMove[i] = 1
 			}
 		}
-		size, _ :=  utils.GetFolderSize(req.Sources[i])
+		size, _ := utils.GetFolderSize(req.Sources[i])
 		sourceSumSize += size
 	}
 

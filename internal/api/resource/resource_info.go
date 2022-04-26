@@ -16,9 +16,7 @@ import (
 	"strconv"
 	"strings"
 
-	"os"
 	"path/filepath"
-	"sort"
 	"time"
 )
 
@@ -38,15 +36,17 @@ type GetResourceInfoReq struct {
 }
 
 type Info struct {
-	Name      string `json:"name"`
-	Size      int64  `json:"size"`
-	ModTime   int64  `json:"mod_time"`
-	Type      int    `json:"type"`
-	Path      string `json:"path"`
-	IsEncrypt int    `json:"is_encrypt"` // 是否加密
-	Read      int    `json:"read"`       // 是否可读：1/0
-	Write     int    `json:"write"`      // 是否可写：1/0
-	Deleted   int    `json:"deleted"`    // 是否可删：1/0
+	Id           int    `json:"id"`
+	Name         string `json:"name"`
+	Size         int64  `json:"size"`
+	ModTime      int64  `json:"mod_time"`
+	Type         int    `json:"type"`
+	Path         string `json:"path"`
+	IsEncrypt    int    `json:"is_encrypt"`    // 是否加密
+	Read         int    `json:"read"`          // 是否可读：1/0
+	Write        int    `json:"write"`         // 是否可写：1/0
+	Deleted      int    `json:"deleted"`       // 是否可删：1/0
+	ThumbnailUrl string `json:"thumbnail_url"` // 缩略图地址
 }
 
 func GetResourceInfo(c *gin.Context) {
@@ -122,16 +122,27 @@ func (req *GetResourceInfoReq) wrapResources(newPath string, c *gin.Context) (in
 		whereStr := fmt.Sprintf("auth.uid = %d and auth.read = 1 and folder.mode = 1 and auth.is_share = 0", user.UserID)
 		folderList, _ := entity.GetRelateFolderList(whereStr, req.PageOffset, req.PageSize)
 		totalRow, _ = entity.GetRelateFolderCount(whereStr)
-
 		for _, folder := range folderList {
+			url := utils.FilePath(folder.Hash) + ".png"
+			if folder.Hash == "" {
+				url = ""
+			}
+			pathExt := utils.GetPathExt(folder.Name)
+			pathExt = strings.ToLower(pathExt)
+			v, ok := FileTypeMap[pathExt]
+			if !ok || (v != types.FolderPhoto && v != types.FolderVideo) {
+				url = ""
+			}
 			infos = append(infos, Info{
-				Name:      folder.Name,
-				Type:      folder.Type,
-				Path:      fmt.Sprintf("/s/%d", folder.Id),
-				IsEncrypt: folder.IsEncrypt,
-				Read:      folder.Read,
-				Write:     folder.Write,
-				Deleted:   folder.Deleted,
+				Id:           folder.Id,
+				Name:         folder.Name,
+				Type:         folder.Type,
+				Path:         fmt.Sprintf("/s/%d", folder.Id),
+				IsEncrypt:    folder.IsEncrypt,
+				Read:         folder.Read,
+				Write:        folder.Write,
+				Deleted:      folder.Deleted,
+				ThumbnailUrl: url,
 			})
 		}
 	} else {
@@ -163,47 +174,50 @@ func (req *GetResourceInfoReq) wrapResources(newPath string, c *gin.Context) (in
 // GetResourceInfos 获取文件及子目录列表
 func (req *GetResourceInfoReq) GetResourceInfos(newPath string, c *gin.Context) (resourceInfos []Info, err error) {
 	fs := filebrowser.GetFB()
-	file, err := fs.Open(newPath)
+	fileInfos, err := entity.GetFolderListByAbsPath(newPath)
 	if err != nil {
-		if os.IsNotExist(err) {
-			err = errors.Wrap(err, status.ResourceNotExistErr)
-		} else {
-			err = errors.Wrap(err, errors.InternalServerErr)
-		}
-		return
+		return nil, err
 	}
-
-	// 读取该目录下所有信息
-	fileInfos, err := file.Readdir(-1)
-	if err != nil {
-		return
-	}
-
-	// 文件排序， 倒叙
-	sort.Slice(fileInfos, func(i, j int) bool {
-		return fileInfos[i].ModTime().After(fileInfos[j].ModTime())
-	})
-
 	// 因为是二级目录，能从上下文中获取权限
 	isEncrypt, _ := c.Get("is_encrypt")
 	read, _ := c.Get("read")
 	write, _ := c.Get("write")
 	deleted, _ := c.Get("deleted")
-
+	var id int
+	var hash string
 	for _, fileInfo := range fileInfos {
+		fmt.Println("fileInfos:", fileInfo.AbsPath)
+		fileStat, err := fs.Stat(fileInfo.AbsPath)
+		if err != nil {
+			return nil, err
+		}
+		if err == nil {
+			id = fileInfo.ID
+			hash = fileInfo.Hash
+		}
 		resourceInfo := Info{
-			Name:      fileInfo.Name(),
-			Size:      fileInfo.Size(),
-			ModTime:   fileInfo.ModTime().Unix(),
-			Path:      filepath.Join(newPath, fileInfo.Name()),
+			Id:        id,
+			Name:      fileStat.Name(),
+			Size:      fileStat.Size(),
+			ModTime:   fileStat.ModTime().Unix(),
+			Path:      filepath.Join(newPath, fileStat.Name()),
 			IsEncrypt: isEncrypt.(int),
 			Read:      read.(int),
 			Write:     write.(int),
 			Deleted:   deleted.(int),
 		}
 
-		if !fileInfo.IsDir() {
+		if !fileStat.IsDir() {
 			resourceInfo.Type = types.FolderTypeFile
+
+			pathExt := utils.GetPathExt(fileStat.Name())
+			pathExt = strings.ToLower(pathExt)
+			v, ok := FileTypeMap[pathExt]
+			if ok && (v == types.FolderPhoto || v == types.FolderVideo) {
+				resourceInfo.ThumbnailUrl = utils.FilePath(strings.Split(hash, "-")[0]) + ".png"
+			} else {
+				resourceInfo.ThumbnailUrl = ""
+			}
 		} else if req.Type == GetAllFile {
 			// 如果type 为1且是目录, 则继续获取该目录下的信息
 			var resourceList []Info
